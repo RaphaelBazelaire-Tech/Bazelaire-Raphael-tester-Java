@@ -37,7 +37,7 @@ public class ParkingService {
 
                 int nbTicket = ticketDAO.getNbTicket(vehicleRegNumber);
                 if (nbTicket > 0) {
-                    System.out.println("Welcome back! As a recurring user, you are eligible for a 5% discount !");
+                    System.out.println("Welcome back! As a recurring user of our park, you are eligible for a 5% discount !");
                 } else {
                     System.out.println("Welcome to our parking service.");
                 }
