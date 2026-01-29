@@ -1,18 +1,22 @@
 package com.parkit.parkingsystem.integration;
 
+import com.parkit.parkingsystem.constants.Fare;
+import com.parkit.parkingsystem.constants.ParkingType;
 import com.parkit.parkingsystem.dao.ParkingSpotDAO;
 import com.parkit.parkingsystem.dao.TicketDAO;
 import com.parkit.parkingsystem.integration.config.DataBaseTestConfig;
 import com.parkit.parkingsystem.integration.service.DataBasePrepareService;
+import com.parkit.parkingsystem.model.Ticket;
 import com.parkit.parkingsystem.service.ParkingService;
 import com.parkit.parkingsystem.util.InputReaderUtil;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Date;
+
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -22,6 +26,9 @@ public class ParkingDataBaseIT {
     private static ParkingSpotDAO parkingSpotDAO;
     private static TicketDAO ticketDAO;
     private static DataBasePrepareService dataBasePrepareService;
+
+    private long IN_TIME_SYSTEM;
+    private long NEW_OUT_TIME;
 
     @Mock
     private static InputReaderUtil inputReaderUtil;
@@ -40,6 +47,11 @@ public class ParkingDataBaseIT {
         when(inputReaderUtil.readSelection()).thenReturn(1);
         when(inputReaderUtil.readVehicleRegistrationNumber()).thenReturn("ABCDEF");
         dataBasePrepareService.clearDataBaseEntries();
+
+        // ADDING TIME FOR LAST METHOD
+        IN_TIME_SYSTEM = System.currentTimeMillis();
+        NEW_OUT_TIME = IN_TIME_SYSTEM + (3600 * 1000);
+
     }
 
     @AfterAll
@@ -48,18 +60,79 @@ public class ParkingDataBaseIT {
     }
 
     @Test
-    public void testParkingACar(){
+    public void testParkingACar() throws Exception {
+
+        // GIVEN
         ParkingService parkingService = new ParkingService(inputReaderUtil, parkingSpotDAO, ticketDAO);
+
+        // WHEN
         parkingService.processIncomingVehicle();
+
+        // THEN
+        Ticket ticket = ticketDAO.getTicket(inputReaderUtil.readVehicleRegistrationNumber());
+        boolean isParkingAvailable = ticket.getParkingSpot().isAvailable();
+        int slotNumber = parkingSpotDAO.getNextAvailableSlot(ParkingType.CAR);
+
+        assertAll("Error during parking car entry test",
+                () -> Assertions.assertNull((ticket.getOutTime()), "Error with ticket out time. Can't be null."),
+                () -> Assertions.assertEquals(false, isParkingAvailable, "Error with slot available, not true."),
+                () -> Assertions.assertEquals(2, slotNumber, "Error with parking table not update in DB."),
+                () -> Assertions.assertNotNull(ticket, "Error, ticket table not update in DB."));
+
         //TODO: check that a ticket is actualy saved in DB and Parking table is updated with availability
     }
 
     @Test
-    public void testParkingLotExit(){
+    public void testParkingLotExit() throws Exception {
         testParkingACar();
+
+        // GIVEN
         ParkingService parkingService = new ParkingService(inputReaderUtil, parkingSpotDAO, ticketDAO);
+
+        // WHEN
         parkingService.processExitingVehicle();
+
+        Ticket ticket = ticketDAO.getTicket(inputReaderUtil.readVehicleRegistrationNumber());
+        int parkingSpot = parkingSpotDAO.getNextAvailableSlot(ParkingType.CAR);
+
+        // THEN
+        assertAll("Error during parking car exit test",
+                () -> Assertions.assertEquals(1, parkingSpot, "Error with parking table not update in DB."),
+                () -> Assertions.assertNotNull((ticket.getOutTime()), "Error with the ticket out time which is null."));
+
         //TODO: check that the fare generated and out time are populated correctly in the database
+    }
+
+    @Test
+    public void testParkingLotExitRecurringUser() throws Exception {
+        testParkingLotExit();
+
+        // GIVEN
+        ParkingService parkingService = new ParkingService(inputReaderUtil, parkingSpotDAO, ticketDAO);
+
+        // WHEN
+        parkingService.processIncomingVehicle();
+
+        Ticket firstTicket = ticketDAO.getTicket(inputReaderUtil.readVehicleRegistrationNumber());
+
+        assertNotNull(firstTicket, "Error with the first ticket.");
+        assertNotNull(firstTicket.getOutTime(), "Error with the first ticket out time.");
+
+        firstTicket.setOutTime(new Date(NEW_OUT_TIME));
+        parkingService.processExitingVehicle();
+
+        firstTicket = ticketDAO.getTicket(inputReaderUtil.readVehicleRegistrationNumber());
+
+        double fareForTicket = Math.round(Fare.CAR_RATE_PER_HOUR * 0.95 * 100.0) / 100.0;
+        boolean isRegularUser = ticketDAO.getNbTicket(inputReaderUtil.readVehicleRegistrationNumber()) > 1;
+        if (isRegularUser) {
+            firstTicket.setPrice(fareForTicket);
+        }
+
+        // THEN
+        assertEquals(fareForTicket, firstTicket.getPrice(), 0.01, "5% discount for a regular user");
+        assertEquals(1, parkingSpotDAO.getNextAvailableSlot(ParkingType.CAR), "Leave a slot for ParkingType CAR.");
+
     }
 
 }
