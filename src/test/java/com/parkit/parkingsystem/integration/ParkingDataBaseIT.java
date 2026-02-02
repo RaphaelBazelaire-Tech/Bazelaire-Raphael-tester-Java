@@ -70,7 +70,6 @@ public class ParkingDataBaseIT {
 
         // WHEN
         parkingService.processIncomingVehicle();
-
         // THEN
         Ticket ticket = ticketDAO.getTicket(inputReaderUtil.readVehicleRegistrationNumber());
         boolean isParkingAvailable = ticket.getParkingSpot().isAvailable();
